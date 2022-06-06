@@ -1,6 +1,7 @@
 package hd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,8 +12,8 @@ import (
 	hdwallet "github.com/miguelmota/go-ethereum-hdwallet"
 
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-
 	cryptocodec "github.com/tharsis/ethermint/crypto/codec"
 	ethermint "github.com/tharsis/ethermint/types"
 )
@@ -28,21 +29,36 @@ func TestKeyring(t *testing.T) {
 	dir := t.TempDir()
 	mockIn := strings.NewReader("")
 
-	kr, err := keyring.New("ethermint", keyring.BackendTest, dir, mockIn, EthSecp256k1Option())
+	evmkr, err := keyring.New("evmos", keyring.BackendTest, dir, mockIn, EthSecp256k1Option())
+	gravkr, err := keyring.New("gravity", keyring.BackendMemory, dir, mockIn, EthSecp256k1Option())
 	require.NoError(t, err)
 
 	// fail in retrieving key
-	info, err := kr.Key("foo")
+	info, err := evmkr.Key("foo")
 	require.Error(t, err)
 	require.Nil(t, info)
 
 	mockIn.Reset("password\npassword\n")
-	info, mnemonic, err := kr.NewMnemonic("foo", keyring.English, ethermint.BIP44HDPath, keyring.DefaultBIP39Passphrase, EthSecp256k1)
+	info, err = evmkr.NewAccount("foo", mnemonic, keyring.DefaultBIP39Passphrase, ethermint.BIP44HDPath, EthSecp256k1)
 	require.NoError(t, err)
 	require.NotEmpty(t, mnemonic)
 	require.Equal(t, "foo", info.GetName())
 	require.Equal(t, "local", info.GetType().String())
 	require.Equal(t, EthSecp256k1Type, info.GetAlgo())
+	fmt.Println("Mnemonic derived is", mnemonic)
+
+	//defaultCosmosHDPath := hd.CreateHDPath(sdk.CoinType, 0, 0).String()
+	//ginfo, gmnem, gerr := gravkr.NewMnemonic("bar", keyring.English, ethermint.BIP44HDPath, keyring.DefaultBIP39Passphrase, hd.Secp256k1)
+	gmnem := mnemonic
+	ginfo, gerr := gravkr.NewAccount("foo", mnemonic, keyring.DefaultBIP39Passphrase, ethermint.BIP44HDPath, hd.Secp256k1)
+	require.NoError(t, gerr)
+	require.NotEmpty(t, gmnem)
+	require.Equal(t, "foo", ginfo.GetName())
+	require.Equal(t, "local", ginfo.GetType().String())
+	require.Equal(t, hd.Secp256k1Type, ginfo.GetAlgo())
+	fmt.Println("Mnemonic derived is", gmnem)
+
+	fmt.Println("Addresses are ", info.GetAddress().String(), "and", ginfo.GetAddress().String())
 
 	hdPath := ethermint.BIP44HDPath
 
@@ -54,8 +70,8 @@ func TestKeyring(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, wrongBz)
 
-	privkey := EthSecp256k1.Generate()(bz)
-	addr := common.BytesToAddress(privkey.PubKey().Address().Bytes())
+	evmPrivkey := EthSecp256k1.Generate()(bz)
+	evmAddr := common.BytesToAddress(evmPrivkey.PubKey().Address().Bytes())
 
 	wallet, err := hdwallet.NewFromMnemonic(mnemonic)
 	require.NoError(t, err)
@@ -64,7 +80,7 @@ func TestKeyring(t *testing.T) {
 
 	account, err := wallet.Derive(path, false)
 	require.NoError(t, err)
-	require.Equal(t, addr.String(), account.Address.String())
+	require.Equal(t, evmAddr.String(), account.Address.String())
 }
 
 func TestDerivation(t *testing.T) {
